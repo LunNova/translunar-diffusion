@@ -1,0 +1,183 @@
+model:
+  base_learning_rate: 5.0e-06
+  # base_learning_rate: 2.5e-06 # swap to this 100k in ?
+  target: ldm.models.autoencoder.AutoencoderKL
+  params:
+    embed_dim: 4
+    monitor: &monitor val/rec_loss
+    # ckpt_path: "models/sd-v1.4-kl.ckpt"
+    # ckpt_path: "models/danbooru-kl-f8.ckpt" # https://mystic.the-eye.eu/public/AI/models/
+    # ckpt_path: "models/first_stage_models/kl-f8/model.ckpt" # https://ommer-lab.com/files/latent-diffusion/
+    ddconfig:
+      double_z: true
+      z_channels: 4
+      resolution: &image_size 512
+      in_channels: 3
+      out_ch: 3
+      ch: 128
+      ch_mult:
+      - 1
+      - 2
+      - 4
+      - 4
+      num_res_blocks: 2
+      attn_resolutions: []
+      dropout: 0.0
+    lossconfig:
+      target: ldm.modules.losses.LPIPSWithDiscriminator
+      params:
+        disc_start: 500
+        kl_weight: 0.000001
+        disc_weight: 0.5
+
+data:
+  target: lun.data.module.DataModuleFromConfig
+  params:
+    batch_size: 2
+    num_workers: 16
+    wrap: false
+    train:
+      target: lun.data.local.LocalBase
+      params:
+        size: *image_size
+        flip_p: 0.333
+        mode: "train"
+        metadata_params: &train_metadata_params
+          #consider_every_nth: 8
+          shuffle_tag_p: 0.5
+          blacklist_tags:
+            - animated
+            - barely pony related
+            - equestria girls
+            - irl human
+            - machine learning generated
+            - nazi
+            - oc:aryanne
+            - racial slur
+            - racist
+            - drama bait
+            - deviantart stamp
+            - text only
+            - forced meme
+            - not pony related
+            - jailbait
+            - implied foalcon
+            - foalcon
+            - transparent background
+            - human
+            - ych
+            - diaper
+            - diaper fetish
+            # buncha text stuff
+            - comic
+            - speech bubble
+            - speech
+            - image macro
+            - dialogue
+            - tumblr # usually has an ask box = text
+          skip_caption: true
+          abs_min_score: 50
+          min_score: 100
+          tag_bonus_scores:
+            solo: 100
+            duo: 100
+            space pony: 50
+            plane pony: 50
+            robot: 50
+            robot pony: 50
+            pride flag: 50
+            transgender pride flag: 50
+            nightmare moon: 50
+            princess luna: 50
+            queen chrysalis: 50
+            monochrome: -75
+            grayscale: -75
+            sketch: -75
+    validation:
+      target: lun.data.local.LocalBase
+      params:
+        size: *image_size
+        flip_p: 0.333
+        mode: "val"
+        metadata_params:
+          << : *train_metadata_params
+          consider_every_nth: 8
+          abs_min_score: 1000
+          min_score: 1000
+          tag_bonus_scores: null
+          score_tags:
+            - 1600
+            - 800
+
+lightning:
+  logger:
+    tensorboard:
+      target: pytorch_lightning.loggers.tensorboard.TensorBoardLogger
+      params:
+        flush_secs: 60
+        name: tensorboard
+  callbacks:
+    progress:
+      target: lun.callbacks.SmoothedProgressBar
+    # These look messy but afaict you need all these settings for correct functioning
+    monitored_checkpoint:
+      target: pytorch_lightning.callbacks.ModelCheckpoint
+      params:
+        auto_insert_metric_name: false
+        monitor: *monitor
+        save_top_k: 1
+        save_last: false # don't do last.cklpt
+        filename: monitor/loss={val/loss_simple_ema:.3f} e={epoch:04d} gs={step:06d}
+    periodic_checkpoint:
+      target: pytorch_lightning.callbacks.ModelCheckpoint
+      params:
+        auto_insert_metric_name: false
+        every_n_train_steps: 20000
+        monitor: null
+        save_top_k: -1 # keep unlimited
+        save_last: false # don't do last.cklpt
+        save_on_train_epoch_end: True # val may be off
+        filename: periodic/e={epoch:04d} gs={step:06d}
+    periodic_checkpoint_overwrite:
+      target: pytorch_lightning.callbacks.ModelCheckpoint
+      params:
+        auto_insert_metric_name: false
+        every_n_train_steps: 1000
+        monitor: null
+        save_top_k: 1 # needs this so it will actually overwrite
+        save_last: false # don't do last.cklpt
+        save_on_train_epoch_end: True
+        filename: every-1k-steps
+    image_logger:
+      target: lun.callbacks.ImageLogger
+      params:
+        batch_frequency: 71
+        max_images: 4
+        increase_log_steps: False
+        log_first_step: False
+        check_custom_step: True
+        log_images_kwargs:
+          use_ema_scope: False
+          inpaint: False
+          plot_progressive_rows: False
+          plot_diffusion_rows: False
+          N: 4
+          ddim_steps: 50
+  trainer:
+    benchmark: True
+    amp_backend: native
+    #strategy: "deepspeed"
+    #strategy: "deepspeed" # deepspeed_stage_2_offload
+    val_check_interval: 1000
+    limit_val_batches: 25
+    num_sanity_val_steps: 1
+    accumulate_grad_batches: 1
+    # TODO: Make bf16 work? Need to fix a LOT of .to(device) calls
+    # See https://pytorch-lightning.readthedocs.io/en/latest/accelerators/accelerator_prepare.html
+    #precision: 16
+    max_epochs: 1000
+  deepspeed:
+    # Setting this uses config file and ignores other flags
+    # config: ./configs/stable-diffusion/deepspeed.json/
+    stage: 1
+    offload_optimizer: True

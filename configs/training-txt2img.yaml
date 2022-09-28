@@ -1,0 +1,313 @@
+model:
+  base_learning_rate: 5.0e-06
+  # base_learning_rate: 2.5e-06 # swap to this 100k in ?
+  target: ldm.models.diffusion.ddpm.LatentDiffusion
+  params:
+    linear_start: 0.00085
+    linear_end: 0.0120
+    num_timesteps_cond: 1
+    log_every_t: 200
+    timesteps: 1000
+    first_stage_key: image
+    cond_stage_key: caption
+    image_size: 64
+    channels: 4
+    first_stage_trainable: false
+    cond_stage_trainable: false   # Note: different from the one we trained before
+    conditioning_key: crossattn
+    monitor: &monitor val/loss_simple_ema
+    scale_factor: 0.18215
+    # learn_logvar: false # TESTING
+
+    scheduler_config: # 10000 warmup steps
+      target: ldm.lr_scheduler.LambdaLinearScheduler
+      params:
+        warm_up_steps: [ 1 ] # NOTE 1 for resuming. use 10000 if starting from scratch
+        cycle_lengths: [ 10000000000000 ] # incredibly large number to prevent corner cases
+        f_start: [ 1.e-6 ]
+        f_max: [ 1. ]
+        f_min: [ 1. ]
+
+    unet_config:
+      target: ldm.modules.diffusionmodules.openaimodel.UNetModel
+      params:
+        image_size: 32 # unused
+        in_channels: 4
+        out_channels: 4
+        model_channels: 320
+        attention_resolutions: [ 4, 2, 1 ]
+        num_res_blocks: 2
+        channel_mult: [ 1, 2, 4, 4 ]
+        num_heads: 8
+        use_spatial_transformer: True
+        transformer_depth: 1
+        context_dim: 768
+        use_checkpoint: True
+        legacy: False
+
+    first_stage_config:
+      target: ldm.models.autoencoder.AutoencoderKL
+      params:
+        embed_dim: 4
+        monitor: val/rec_loss/
+        ckpt_path: "models/sd-v1.4-kl.ckpt"
+        # ckpt_path: "models/danbooru-kl-f8.ckpt" # https://mystic.the-eye.eu/public/AI/models/
+        # ckpt_path: "models/first_stage_models/kl-f8/model.ckpt" # https://ommer-lab.com/files/latent-diffusion/
+        ddconfig:
+          double_z: true
+          z_channels: 4
+          resolution: 512
+          in_channels: 3
+          out_ch: 3
+          ch: 128
+          ch_mult:
+          - 1
+          - 2
+          - 4
+          - 4
+          num_res_blocks: 2
+          attn_resolutions: []
+          dropout: 0.0
+        lossconfig:
+          target: torch.nn.Identity
+          # target: ldm.modules.losses.LPIPSWithDiscriminator
+          # params:
+          #   disc_start: 50001
+          #   kl_weight: 0.000001
+          #   disc_weight: 0.5
+
+
+    cond_stage_config:
+      target: ldm.modules.encoders.modules.FrozenCLIPEmbedder
+
+data:
+  target: lun.data.module.DataModuleFromConfig
+  params:
+    batch_size: 1
+    num_workers: 4
+    train:
+      target: lun.data.local.Local
+      params:
+        size: 512
+        flip_p: 0.333
+        metadata_params: &train_metadata_params
+          #consider_every_nth: 8
+          shuffle_tag_p: 0.5
+          caption_sorter:
+            target: lun.local.tag_sort.tag_sort
+          blacklist_tags:
+            - animated
+            - barely pony related
+            - equestria girls
+            - irl human
+            - human
+            - ych
+            - machine learning generated
+            - nazi
+            - oc:aryanne
+            - racial slur
+            - racist
+            - drama bait
+            - deviantart stamp
+            - text only
+            - forced meme
+            - not pony related
+            # buncha text stuff
+            - comic
+            - speech bubble
+            - speech
+            - image macro
+            - dialogue
+            - tumblr # usually has an ask box = text
+            # nsfw/fetishes that get marked sfw
+            - explicit
+            - questionable
+            - fetish
+            - immobile
+            - morbidly obese
+            - hyper
+            - inflation
+            - jailbait
+            - implied foalcon
+            - foalcon
+            - diaper
+            - diaper fetish
+          # tags which aren't needed to determine image contents
+          non_caption_tags:
+            - absurd resolution
+            - absurd res
+            - high res
+            - alternate version
+            - commission
+            - ych result
+            - scene interpretation
+            - shipping
+            - straight
+            - lesbian
+            - gay
+            - crossover
+            - recolor
+            - trace
+            - source needed
+            - alicorn oc
+            - oc
+            - oc only
+            - canon x oc
+            - busty oc
+            - anthro oc
+            - solo female
+            - solo male
+            - commission
+            - textless version
+            - derpibooru exclusive
+            - edit
+            - color edit
+            - story in the comments
+            - translated in the comments
+            - clopfic in the comments
+            - discussion in the comments
+            - derail in the comments
+          replacements:
+            princess cadance: cadance
+            princess luna: luna
+            nightmare moon: nmm
+            shining armor: shiny
+            gleaming shield: gs
+            queen chrysalis: chrissy
+            princess celestia: celestia
+            twilight sparkle: twilight
+            rainbow dash: dashie
+            pinkie pie: pinkie
+            applejack: aj
+            vinyl scratch: vinyl
+            octavia melody: octavia
+            tempest shadow: tshadow
+            lyra heartstrings: lyra
+            maud pie: maud
+            izzy moonbow: izzy
+            big macintosh: bigmac
+            derpy hooves: derpy
+            starlight glimmer: glim
+            apple bloom: abloom
+            sunset shimmer: sunshim
+            sweetie belle: sbelle
+            "soarin'": soarin
+            'artist:': 'by:'
+            ':': '='
+          abs_min_score: 50
+          min_score: 200
+          score_tags:
+            - 3200
+            - 1600
+            - 800
+            - 600
+            - 400
+            - 300
+            - 200
+            - 150
+            - 100
+            - 50
+            - 25
+            - 5
+          tag_bonus_scores:
+            solo: 100
+            duo: 100
+            space pony: 50
+            plane pony: 50
+            robot: 50
+            robot pony: 50
+            pride flag: 50
+            transgender pride flag: 50
+            nightmare moon: 50
+            princess luna: 50
+            queen chrysalis: 50
+            monochrome: -75
+            grayscale: -75
+            sketch: -75
+    validation:
+      target: lun.data.local.Local
+      params:
+        size: 512
+        flip_p: 0.333
+        metadata_params:
+          << : *train_metadata_params
+          consider_every_nth: 8
+          abs_min_score: 1000
+          min_score: 1000
+          tag_bonus_scores: null
+          score_tags:
+            - 1600
+            - 800
+
+lightning:
+  logger:
+    tensorboard:
+      target: pytorch_lightning.loggers.tensorboard.TensorBoardLogger
+      params:
+        flush_secs: 60
+        name: tensorboard
+  callbacks:
+    progress:
+      target: lun.callbacks.SmoothedProgressBar
+    # These look messy but afaict you need all these settings for correct functioning
+    monitored_checkpoint:
+      target: pytorch_lightning.callbacks.ModelCheckpoint
+      params:
+        auto_insert_metric_name: false
+        monitor: *monitor
+        save_top_k: 1
+        save_last: false # don't do last.cklpt
+        filename: monitor/loss={val/loss_simple_ema:.3f} e={epoch:04d} gs={step:06d}
+    periodic_checkpoint:
+      target: pytorch_lightning.callbacks.ModelCheckpoint
+      params:
+        auto_insert_metric_name: false
+        every_n_train_steps: 20000
+        monitor: null
+        save_top_k: -1 # keep unlimited
+        save_last: false # don't do last.cklpt
+        save_on_train_epoch_end: True # val may be off
+        filename: periodic/e={epoch:04d} gs={step:06d}
+    periodic_checkpoint_overwrite:
+      target: pytorch_lightning.callbacks.ModelCheckpoint
+      params:
+        auto_insert_metric_name: false
+        every_n_train_steps: 2000
+        monitor: null
+        save_top_k: 1 # needs this so it will actually overwrite
+        save_last: false # don't do last.cklpt
+        save_on_train_epoch_end: True
+        filename: every-3k-steps
+    image_logger:
+      target: lun.callbacks.ImageLogger
+      params:
+        batch_frequency: 500
+        max_images: 4
+        increase_log_steps: False
+        log_first_step: False
+        check_custom_step: True
+        log_images_kwargs:
+          use_ema_scope: False
+          inpaint: False
+          plot_progressive_rows: False
+          plot_diffusion_rows: False
+          N: 4
+          ddim_steps: 50
+  trainer:
+    benchmark: True
+    amp_backend: native
+    #strategy: "deepspeed"
+    #strategy: "deepspeed" # deepspeed_stage_2_offload
+    val_check_interval: 1000
+    limit_val_batches: 25
+    num_sanity_val_steps: 1
+    accumulate_grad_batches: 1
+    # TODO: Make bf16 work? Need to fix a LOT of .to(device) calls
+    # See https://pytorch-lightning.readthedocs.io/en/latest/accelerators/accelerator_prepare.html
+    precision: 16
+    max_epochs: 1000
+  deepspeed:
+    # Setting this uses config file and ignores other flags
+    # config: ./lun/configs/deepspeed.json
+    stage: 1
+    offload_optimizer: True

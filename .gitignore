@@ -1,0 +1,7 @@
+local/
+*.ckpt
+*.pt
+*.so
+__pycache__/
+*.pyc
+*.pyo

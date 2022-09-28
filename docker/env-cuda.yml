@@ -1,0 +1,46 @@
+name: ldm
+channels:
+  - pytorch
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.8
+  - pip>=22
+  - cudatoolkit>=11.3
+  - numpy>=1.19.2
+  - mpi4py>=3.1.3
+  - pip:
+    - setuptools>=65.3.0
+    - wheel>=0.37.1
+  - pip:
+    - pyston-lite>=2.3.4.2
+    - mypy
+    - flake8
+    - blue
+  - pip:
+    - torch>=1.12.1
+    - torchvision
+    - albumentations>=0.4.3
+    #- diffusers
+    - opencv-python>=4.1.2.30
+    - pudb>=2019.2
+    - invisible-watermark
+    - imageio>=2.9.0
+    - imageio-ffmpeg>=0.4.2
+    - pytorch-lightning==1.7.6
+    - omegaconf>=2.1.1
+    - streamlit>=0.73.1
+    - einops>=0.3.0
+    - torch-fidelity>=0.3.0
+    - torchmetrics>=0.7.0
+    - kornia>=0.6
+    - -e git+https://github.com/CompVis/taming-transformers.git@master#egg=taming-transformers
+    #- -e git+https://github.com/openai/CLIP.git@main#egg=clip
+    #- -e git+https://github.com/CompVis/stable-diffusion#egg=latent-diffusion
+    - -e git+https://github.com/crowsonkb/k-diffusion#egg=k-diffusion
+  - pip:
+    - types-Pillow
+  - pip:
+    - deepspeed>=0.7.2
+    - transformers[deepspeed]>=4.19.2
+
