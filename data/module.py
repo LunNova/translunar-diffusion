@@ -12,46 +12,54 @@ from functools import partial
 class DataModuleFromConfig(pl.LightningDataModule):
     def __init__(
         self,
-        batch_size,
+        batch_size=1,
+        num_workers=None,
         train=None,
         validation=None,
         test=None,
         predict=None,
         wrap=False,
-        num_workers=None,
-        shuffle_test_loader=False,
         use_worker_init_fn=False,
-        shuffle_val_dataloader=False,
     ):
         super().__init__()
         self.datasets = None
-        self.batch_size = batch_size
         self.dataset_configs = {}
-        self.num_workers = num_workers or batch_size * 2
         self.use_worker_init_fn = use_worker_init_fn
+        num_workers = num_workers if num_workers is not None else batch_size
+        default_dataloader_params = {
+            'batch_size': batch_size,
+            'num_workers': num_workers,
+            'shuffle': True,
+            'drop_last': True,
+            'persistent_workers': num_workers > 0,
+        }
         if train is not None:
             self.dataset_configs['train'] = train
             self.train_dataloader = partial(
-                self._build_dataloader, mode='train'
+                self._build_dataloader, mode='train',
+                dataloader_params=dict(default_dataloader_params, **train.get('dataloader_params', {}))
             )
+        default_dataloader_params['shuffle'] = False
         if validation is not None:
             self.dataset_configs['validation'] = validation
             self.val_dataloader = partial(
                 self._build_dataloader,
                 mode='validation',
-                shuffle=shuffle_val_dataloader,
+                dataloader_params=dict(default_dataloader_params, **validation.get('dataloader_params', {}))
             )
         if test is not None:
             self.dataset_configs['test'] = test
             self.test_dataloader = partial(
                 self._build_dataloader,
                 mode='test',
-                shuffle=shuffle_test_loader,
+                dataloader_params=dict(default_dataloader_params, **test.get('dataloader_params', {}))
             )
         if predict is not None:
             self.dataset_configs['predict'] = predict
             self.predict_dataloader = partial(
-                self._build_dataloader, mode='predict'
+                self._build_dataloader,
+                mode='predict',
+                dataloader_params=dict(default_dataloader_params, **predict.get('dataloader_params', {}))
             )
         self.wrap = wrap
 
@@ -85,7 +93,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
         for k, v in self.datasets.items():
             print(f'dataset\t{k}\t{v}\tlen={len(v)}')
 
-    def _build_dataloader(self, mode: str, shuffle=True):
+    def _build_dataloader(self, mode: str, dataloader_params: dict):
         is_iterable_dataset = isinstance(
             self.datasets[mode], Txt2ImgIterableBaseDataset
         )
@@ -94,15 +102,13 @@ class DataModuleFromConfig(pl.LightningDataModule):
             if is_iterable_dataset or self.use_worker_init_fn
             else None
         )
-        shuf = False if is_iterable_dataset else True
-        print(f'Initing {mode} DataLoader, shuffle={shuffle}')
+        if init_fn:
+            print("Using worker_init_fn ", init_fn)
+        print(f'Initing {mode} DataLoader, params={dataloader_params}')
         return DataLoader(
             self.datasets[mode],
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            shuffle=shuffle,
-            worker_init_fn=init_fn,
-            drop_last=True,
+            **dataloader_params,
+            worker_init_fn=init_fn
         )
 
 
