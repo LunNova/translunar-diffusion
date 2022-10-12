@@ -1,0 +1,81 @@
+lightning:
+  logger:
+    tensorboard:
+      target: pytorch_lightning.loggers.tensorboard.TensorBoardLogger
+      params:
+        flush_secs: 600
+        name: tensorboard
+  callbacks:
+    progress:
+      target: lun.callbacks.SmoothedProgressBar
+    # These look messy but afaict you need all these settings for correct functioning
+    # FSDP hangs with this on
+    # monitored_checkpoint:
+    #   target: pytorch_lightning.callbacks.ModelCheckpoint
+    #   params:
+    #     auto_insert_metric_name: false
+    #     monitor: val/loss_simple_ema
+    #     save_top_k: 1
+    #     save_last: false # don't do last.ckpt
+    #     filename: monitor/loss={val/loss_simple_ema:.3f} e={epoch:04d} gs={step:06d}
+    periodic_checkpoint:
+      target: pytorch_lightning.callbacks.ModelCheckpoint
+      params:
+        auto_insert_metric_name: false
+        every_n_train_steps: 20000
+        monitor: null
+        save_top_k: -1 # keep unlimited
+        save_last: false # don't do last.ckpt
+        save_on_train_epoch_end: True # val may be off
+        filename: periodic/e={epoch:04d} gs={step:06d}
+    epoch_checkpoint:
+      target: pytorch_lightning.callbacks.ModelCheckpoint
+      params:
+        auto_insert_metric_name: false
+        every_n_epochs: 1
+        monitor: null
+        save_top_k: -1 # keep unlimited
+        save_last: false # don't do last.ckpt
+        save_on_train_epoch_end: True # val may be off
+        filename: epoch/e={epoch:04d} gs={step:06d}
+    periodic_checkpoint_overwrite:
+      target: pytorch_lightning.callbacks.ModelCheckpoint
+      params:
+        auto_insert_metric_name: false
+        every_n_train_steps: 2000
+        monitor: null
+        save_top_k: 1 # needs this so it will actually overwrite
+        save_last: false # don't do last.ckpt
+        save_on_train_epoch_end: True
+        filename: every-3k-steps
+    image_logger:
+      target: lun.callbacks.ImageLogger
+      params:
+        batch_frequency: 300
+        val_batch_frequency: 10
+        max_images: 4
+        log_images_kwargs:
+          use_ema_scope: False
+          inpaint: False
+          plot_progressive_rows: False
+          plot_diffusion_rows: False
+          N: 4
+          ddim_steps: 50
+  trainer:
+    benchmark: True
+    amp_backend: native
+    #strategy: "deepspeed"
+    #strategy: "deepspeed" # deepspeed_stage_2_offload
+    val_check_interval: 2000
+    limit_val_batches: 30
+    num_sanity_val_steps: 10
+    accumulate_grad_batches: 1
+    # TODO: Make bf16 work? Need to fix a LOT of .to(device) calls
+    # See https://pytorch-lightning.readthedocs.io/en/latest/accelerators/accelerator_prepare.html
+    precision: 16
+    max_epochs: 1000
+  deepspeed:
+    # Setting this uses config file and ignores other flags
+    # config: ./lun/configs/deepspeed.json
+    stage: 1
+    offload_optimizer: True
