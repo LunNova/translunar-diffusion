@@ -24,6 +24,7 @@ podman run --name $container --rm -it -v $(realpath ../../):/content/ \
   -u 1000:1000 \
   --device /dev/kfd --device /dev/dri --security-opt seccomp=unconfined --group-add video \
   --network host \
+  --log-driver none \
   $tag \
   bash -c ". /usr/local/bin/_activate_current_env.sh && id && cd /content && ls -l . && pip install --user -e . && exec bash" || true
 podman rm $container || true
