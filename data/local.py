@@ -30,6 +30,7 @@ class Local(Dataset):
     size: int
     flip: Any
     interpolation: Any
+    limit_images: int | None
 
     def __init__(
         self,
@@ -39,6 +40,7 @@ class Local(Dataset):
         flip_p: float | None = 0.5,
         crop: bool = True,
         metadata_params: dict[str, Any] | Any | None = None,
+        limit_images: int | None = None,
     ):
         super().__init__()
 
@@ -55,6 +57,7 @@ class Local(Dataset):
         }[interpolation]
         self.images = None
         self.flip = None
+        self.limit_images = limit_images
         if flip_p and flip_p > 0:
             self.flip = transforms.RandomHorizontalFlip(p=flip_p)
 
@@ -69,12 +72,13 @@ class Local(Dataset):
                 OmegaConf.to_container(self.metadata_params, resolve=True),
             )
             assert isinstance(metadata_params_converted, dict)
-            if 'caption_sorter' in metadata_params_converted:
-                metadata_params_converted[
-                    'caption_sorter'
-                ] = instantiate_from_config(
-                    metadata_params_converted['caption_sorter']
-                )
+            for key in ('caption_sorter', 'custom_filter'):
+                if key in metadata_params_converted:
+                    metadata_params_converted[
+                        key
+                    ] = instantiate_from_config(
+                        metadata_params_converted[key]
+                    )
             self.images = load_images_using_metadata(
                 self.data_root, **metadata_params_converted
             )
@@ -82,6 +86,11 @@ class Local(Dataset):
             self.images = self.load_images(self.data_root)
 
         print(f'Loaded {len(self.images)} captioned images')
+        if self.limit_images:
+            import random
+            random.Random(1).shuffle(self.images)
+            print(f'Limiting to {self.limit_images}')
+            self.images = self.images[:self.limit_images]
 
     def load_images(
         self, data_root: str, consider_every_nth: int | None = None

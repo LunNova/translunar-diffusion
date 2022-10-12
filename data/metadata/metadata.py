@@ -22,12 +22,15 @@ def load_images_using_metadata(
     min_score: int = 50,
     blacklist_tags: List[str] | None = None,
     non_caption_tags: List[str] | Set[str] | None = None,
+    non_caption_tag_prefixes: List[str] | None = None,
     replacements: dict[str, str] | None = None,
     tag_bonus_scores: dict[str, int] | None = None,
     skip_caption: bool = False,
     caption_sorter: Callable[[str], list] | None = None,
+    custom_filter: Callable[[str], bool] | None = None,
     tag_separator: str = ', ',
     final_tag_separator: bool = False,
+    aspect_range: List[int] = [0.71, 1.42],
 ) -> List[dict[str, Any]]:
     examples: List[dict[str, Any]] = []
 
@@ -37,9 +40,16 @@ def load_images_using_metadata(
     non_caption_tags_set = set()
     if non_caption_tags:
         non_caption_tags_set = set(non_caption_tags)
+        print("Filtering out non_caption_tags:", non_caption_tags, "\nprefixes:", non_caption_tag_prefixes)
+
+    aspect_min, aspect_max = aspect_range
 
     def filter_non_caption_tag(tag: str) -> bool:
-        return tag not in non_caption_tags_set
+        if tag in non_caption_tags_set:
+            return False
+        if non_caption_tag_prefixes and any(tag.startswith(prefix) for prefix in non_caption_tag_prefixes):
+            return False
+        return True
 
     if consider_every_nth:
         meta_files = meta_files[0::consider_every_nth]
@@ -55,14 +65,11 @@ def load_images_using_metadata(
         if not meta:
             continue
         aspect_ratio = float(meta['aspect_ratio'])
-        #            if not (0.8 <= aspect_ratio <= 1.25):
         if not (0.71 <= aspect_ratio <= 1.42):
             continue
         score = int(meta['score'])
         if score < abs_min_score:
             continue
-        # if score < 1000:
-        #     continue
         path = f'{data_root}/{str(meta["path"])}'
         if not os.path.exists(path):
             print(f'Skipping missing image {path}')
@@ -71,6 +78,8 @@ def load_images_using_metadata(
         if ext not in allowed_ext:
             continue
         tags: List[str] = meta['tags']
+        if custom_filter and not custom_filter(tags):
+            continue
         for i in score_tags:
             if score >= i:
                 tags.append(f'scr{i}')
@@ -93,11 +102,16 @@ def load_images_using_metadata(
             else:
                 tags.sort(key=caption_sorter)
 
-            caption = tag_separator.join(tags) + (
-                tag_separator if final_tag_separator else ''
-            )
             if replacements:
+                caption = '||'.join(tags) + (
+                    '||' if final_tag_separator else ''
+                )
                 for rk, rv in replacements.items():
                     caption = caption.replace(rk, rv)
+                caption = caption.replace('||', tag_separator)
+            else:
+                caption = tag_separator.join(tags) + (
+                    tag_separator if final_tag_separator else ''
+                )
         examples.append({'image': path, 'caption': caption})
     return examples
